@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin — {{ settings.site_name if settings else 'VPS Manager' }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="icon" href="{{ custom_icon if custom_icon else '/static/img/default-favicon.svg' }}">
+    <style>
+        @keyframes fadeUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+        .page-advanced { position: relative; }
+        .page-advanced::before {
+            content: ''; position: fixed; top: 0; left: var(--sidebar-w); right: 0; bottom: 0;
+            background: radial-gradient(ellipse 60% 40% at 50% 0%, rgba(255,255,255,.03) 0%, transparent 60%);
+            pointer-events: none; z-index: 0;
+        }
+        .page-advanced > * { position: relative; z-index: 1; }
+        .page-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 24px; }
+        .page-header h1 { font-size: 22px; font-weight: 700; letter-spacing: -.5px; }
+        .page-header-sub { font-size: 13px; color: var(--text-dim); margin-top: 2px; }
+        .stat-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+        .stat-card {
+            background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
+            padding: 18px; display: flex; align-items: center; gap: 14px;
+            transition: all .2s; animation: fadeUp .4s ease both;
+        }
+        .stat-card:nth-child(1) { animation-delay: .05s; }
+        .stat-card:nth-child(2) { animation-delay: .1s; }
+        .stat-card:nth-child(3) { animation-delay: .15s; }
+        .stat-card:nth-child(4) { animation-delay: .2s; }
+        .stat-card:hover { border-color: rgba(255,255,255,.1); transform: translateY(-2px); }
+        .stat-icon { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .stat-icon svg { width: 20px; height: 20px; }
+        .stat-icon.s-white { background: rgba(255,255,255,.06); color: var(--text); border: 1px solid rgba(255,255,255,.08); }
+        .stat-icon.s-green { background: var(--green-bg); color: var(--green); border: 1px solid rgba(34,197,94,.12); }
+        .stat-icon.s-yellow { background: var(--yellow-bg); color: var(--yellow); border: 1px solid rgba(234,179,8,.12); }
+        .stat-icon.s-red { background: var(--red-bg); color: var(--red); border: 1px solid rgba(239,68,68,.12); }
+        .stat-info .stat-label { font-size: 11px; font-weight: 500; color: var(--text-dim); text-transform: uppercase; letter-spacing: .5px; }
+        .stat-info .stat-value { font-size: 24px; font-weight: 700; letter-spacing: -.5px; line-height: 1.2; }
+        .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; position: relative; overflow: hidden; }
+        .card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: linear-gradient(90deg, transparent, rgba(255,255,255,.08), transparent); }
+        .card-title { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }
+        .card-title svg { width: 18px; height: 18px; color: var(--text-dim); }
+        .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        thead { background: var(--bg-elevated); }
+        th { text-align: left; padding: 10px 14px; font-weight: 500; color: var(--text-dim); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; border-bottom: 1px solid var(--border); }
+        td { padding: 10px 14px; color: var(--text-muted); border-bottom: 1px solid var(--border); }
+        tr:last-child td { border-bottom: none; }
+        tr:hover td { background: rgba(255,255,255,.03); }
+        .status { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 500; padding: 3px 8px; border-radius: 100px; }
+        .status-dot { width: 6px; height: 6px; border-radius: 50%; }
+        .status-running { background: var(--green-bg); color: var(--green); border: 1px solid rgba(34,197,94,.2); }
+        .status-running .status-dot { background: var(--green); box-shadow: 0 0 6px var(--green); }
+        .status-stopped { background: var(--red-bg); color: var(--red); border: 1px solid rgba(239,68,68,.2); }
+        .status-stopped .status-dot { background: var(--red); }
+        .empty-state { text-align: center; padding: 60px 20px; }
+        .empty-icon { width: 64px; height: 64px; margin: 0 auto 16px; background: var(--bg-hover); border-radius: 16px; display: flex; align-items: center; justify-content: center; color: var(--text-dim); }
+        .empty-state h3 { font-size: 15px; font-weight: 600; color: var(--text-muted); margin-bottom: 6px; }
+        .empty-state p { font-size: 13px; color: var(--text-dim); margin-bottom: 20px; }
+        .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.7); backdrop-filter: blur(4px); display: none; align-items: center; justify-content: center; z-index: 200; padding: 20px; }
+        .modal-bg.active { display: flex; }
+        .modal { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; width: 100%; max-width: 420px; padding: 24px; box-shadow: 0 4px 24px rgba(0,0,0,.5); }
+        .modal-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+        .modal-top h2 { font-size: 15px; font-weight: 600; }
+        .modal-x { background: none; border: none; color: var(--text-dim); font-size: 18px; cursor: pointer; padding: 4px; line-height: 1; border-radius: 4px; }
+        .modal-x:hover { color: var(--text-muted); background: var(--bg-hover); }
+        .form-group { margin-bottom: 16px; }
+        .form-group label { display: block; font-size: 13px; font-weight: 500; color: var(--text-muted); margin-bottom: 6px; }
+        .form-control { width: 100%; padding: 10px 12px; font-size: 14px; font-family: inherit; color: var(--text); background: var(--bg-input); border: 1px solid var(--border); border-radius: 10px; outline: none; transition: all .15s; }
+        .form-control:focus { border-color: rgba(255,255,255,.2); }
+        .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .mb-4 { margin-bottom: 16px; }
+        .vps-os-col,.vps-specs-col{display:table-cell}
+        .user-email-col,.user-joined-col{display:table-cell}
+        @media (max-width: 768px) {
+            .stat-cards { grid-template-columns: repeat(2, 1fr); gap: 6px; }
+            .page-header { flex-direction: column; gap: 10px; }
+            .form-row { grid-template-columns: 1fr; }
+            .stat-card { padding: 8px; gap: 6px; }
+            .stat-icon { width: 28px; height: 28px; border-radius: 6px; }
+            .stat-icon svg { width: 14px; height: 14px; }
+            .stat-info .stat-value { font-size: 14px; }
+            .stat-info .stat-label { font-size: 9px; }
+            .card { padding: 10px; }
+            .card-title { font-size: 12px; margin-bottom: 6px; }
+            table { font-size: 11px; }
+            th, td { padding: 5px 6px; }
+            .page-header h1 { font-size: 15px; }
+            .page-header-sub { font-size: 10px; }
+            .status { padding: 2px 6px; font-size: 9px; }
+            .modal { padding: 14px; }
+            .form-group { margin-bottom: 8px; }
+            .form-control { padding: 7px 9px; font-size: 11px; }
+            .vps-os-col,.vps-specs-col{display:none}
+            .vps-name{font-size:10px;font-weight:500}
+            .vps-detail-mobile{display:block;font-size:9px;color:var(--text-dim);margin-top:1px}
+            .user-email-col,.user-joined-col{display:none}
+            .user-detail-mobile{display:block;font-size:9px;color:var(--text-dim);margin-top:1px}
+            .btn-sm{padding:3px 6px;font-size:9px}
+            .action-btns{flex-direction:column;gap:2px !important}
+        }
+    </style>
+</head>
+<body>
+    {% include 'icons.html' %}
+    {% from 'components.html' import sidebar, topbar, overlay %}
+    <div class="app-layout">
+        {{ sidebar('admin', settings, custom_icon) }}
+        <div class="main-content">
+            {{ topbar('Admin Panel', 'admin') }}
+            <div class="page page-advanced">
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        {% for category, message in messages %}
+                            <div class="alert alert-{{ category }}">{{ message }}</div>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
+                <div class="page-header">
+                    <div>
+                        <h1>Administration</h1>
+                        <p class="page-header-sub">Manage users, VPS instances, and system settings.</p>
+                    </div>
+                    <button class="btn btn-primary" onclick="openModal('createModal')">
+                        <svg width="14" height="14"><use href="#icon-plus"/></svg>
+                        New VPS
+                    </button>
+                </div>
+                <div class="stat-cards">
+                    <div class="stat-card">
+                        <div class="stat-icon s-white"><svg width="20" height="20"><use href="#icon-users"/></svg></div>
+                        <div class="stat-info">
+                            <div class="stat-label">Users</div>
+                            <div class="stat-value">{{ total_users }}</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon s-green"><svg width="20" height="20"><use href="#icon-server"/></svg></div>
+                        <div class="stat-info">
+                            <div class="stat-label">Instances</div>
+                            <div class="stat-value">{{ total_vps }}</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon s-yellow"><svg width="20" height="20"><use href="#icon-play"/></svg></div>
+                        <div class="stat-info">
+                            <div class="stat-label">Active</div>
+                            <div class="stat-value">{{ active_vps }}</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon s-red"><svg width="20" height="20"><use href="#icon-clock"/></svg></div>
+                        <div class="stat-info">
+                            <div class="stat-label">Expiring Soon</div>
+                            <div class="stat-value">{{ expiring_count }}</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card mb-4">
+                    <div class="card-title">
+                        <svg width="18" height="18"><use href="#icon-server"/></svg>
+                        All Instances
+                    </div>
+                    {% if vps_list %}
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>User</th>
+                                    <th>Name</th>
+                                    <th class="vps-os-col">OS</th>
+                                    <th class="vps-specs-col">Specs</th>
+                                    <th>Status</th>
+                                    <th style="text-align: right;">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for vps in vps_list %}
+                                <tr>
+                                    <td>{{ vps['username'] }}</td>
+                                    <td>
+                                        <span class="vps-name">{{ vps['container_name'] }}</span>
+                                        <span class="vps-detail-mobile">{{ vps['os_type'] }} · {{ vps['ram'] }}/{{ vps['cpu'] }}</span>
+                                    </td>
+                                    <td class="vps-os-col">{{ vps['os_type'] }}</td>
+                                    <td class="vps-specs-col" style="font-size: 12px;">{{ vps['ram'] }} / {{ vps['cpu'] }}</td>
+                                    <td>
+                                        <span class="status status-{{ vps['status'] }}">
+                                            <span class="status-dot"></span>
+                                            {{ vps['status'] }}
+                                        </span>
+                                    </td>
+                                    <td style="text-align: right;">
+                                        <div class="action-btns" style="display: flex; gap: 4px; justify-content: flex-end;">
+                                            <a href="/admin/vps/{{ vps['id'] }}" class="btn btn-ghost btn-sm" title="Details">
+                                                <svg width="12" height="12"><use href="#icon-terminal"/></svg>
+                                            </a>
+                                            {% if vps['status'] == 'running' %}
+                                            <form method="POST" action="/admin/stop-vps/{{ vps['id'] }}" style="display: inline;">
+                                                <button type="submit" class="btn btn-yellow btn-sm" title="Stop">
+                                                    <svg width="12" height="12"><use href="#icon-stop"/></svg>
+                                                </button>
+                                            </form>
+                                            {% elif vps['status'] == 'stopped' or vps['status'] == 'created' %}
+                                            <form method="POST" action="/admin/start-vps/{{ vps['id'] }}" style="display: inline;">
+                                                <button type="submit" class="btn btn-green btn-sm" title="Start">
+                                                    <svg width="12" height="12"><use href="#icon-play"/></svg>
+                                                </button>
+                                            </form>
+                                            {% endif %}
+                                            <form method="POST" action="/admin/delete-vps/{{ vps['id'] }}" style="display: inline;">
+                                                <button type="submit" class="btn btn-red btn-sm" onclick="return confirm('Delete this VPS?')" title="Delete">
+                                                    <svg width="12" height="12"><use href="#icon-trash"/></svg>
+                                                </button>
+                                            </form>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="empty-state">
+                        <div class="empty-icon"><svg width="28" height="28"><use href="#icon-server"/></svg></div>
+                        <h3>No instances yet</h3>
+                        <p>Create a VPS for a user to get started.</p>
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="card">
+                    <div class="card-title">
+                        <svg width="18" height="18"><use href="#icon-users"/></svg>
+                        Users
+                    </div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>User</th>
+                                    <th class="user-email-col">Email</th>
+                                    <th>Role</th>
+                                    <th class="user-joined-col">Joined</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for user in users %}
+                                <tr>
+                                    <td>
+                                        {{ user['username'] }}
+                                        <span class="user-detail-mobile">{{ user['email'] }}</span>
+                                    </td>
+                                    <td class="user-email-col text-dim">{{ user['email'] }}</td>
+                                    <td>
+                                        {% if user['is_admin'] %}
+                                        <span class="status status-running">Admin</span>
+                                        {% else %}
+                                        <span class="status status-stopped">User</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="user-joined-col text-dim">{{ user['created_at'] }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="createModal" class="modal-bg">
+        <div class="modal">
+            <div class="modal-top">
+                <h2>New VPS</h2>
+                <button class="modal-x" onclick="closeModal('createModal')">&times;</button>
+            </div>
+            <form method="POST" action="/admin/create-vps">
+                <div class="form-group">
+                    <label>Assign to</label>
+                    <select name="user_id" class="form-control" required>
+                        <option value="">Select user</option>
+                        {% for user in users %}
+                        {% if not user['is_admin'] %}
+                        <option value="{{ user['id'] }}">{{ user['username'] }}</option>
+                        {% endif %}
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>OS</label>
+                    <select name="os_type" class="form-control">
+                        <option value="ubuntu-22.04">Ubuntu 22.04</option>
+                        <option value="ubuntu-26.04">Ubuntu 26.04</option>
+                        <option value="debian-12">Debian 12</option>
+                        <option value="debian-13">Debian 13</option>
+                    </select>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>RAM</label>
+                        <select name="ram" class="form-control">
+                            <option value="2GB">2 GB</option>
+                            <option value="4GB">4 GB</option>
+                            <option value="6GB">6 GB</option>
+                            <option value="8GB">8 GB</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>CPU</label>
+                        <select name="cpu" class="form-control">
+                            <option value="1 vCPU">1 core</option>
+                            <option value="2 vCPU">2 cores</option>
+                            <option value="4 vCPU">4 cores</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Disk</label>
+                    <select name="disk" class="form-control">
+                        <option value="20GB">20 GB</option>
+                        <option value="40GB">40 GB</option>
+                        <option value="80GB">80 GB</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Max Backups (0 = disabled)</label>
+                    <input type="number" name="max_backups" class="form-control" value="0" min="0" max="10">
+                    <p class="text-dim" style="font-size:10px;margin-top:4px;">How many backups the user can create for this VPS</p>
+                </div>
+                <div class="form-group">
+                    <label>Node</label>
+                    <select name="node_id" class="form-control">
+                        {% for node in nodes %}
+                        <option value="{{ node['id'] }}">{{ node['name'] }} ({{ node['hostname'] }}) — {{ node['vps_count'] }}/{{ node['max_vps'] }} VPS</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <button type="submit" class="btn btn-primary" style="width: 100%;">Deploy VPS</button>
+            </form>
+        </div>
+    </div>
+    {{ overlay() }}
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>

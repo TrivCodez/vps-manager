@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Expiring VPS — {{ settings.site_name if settings else 'VPS Manager' }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="icon" href="{{ custom_icon if custom_icon else '/static/img/default-favicon.svg' }}">
+    <style>
+        @keyframes fadeUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+        .page-advanced { position: relative; }
+        .page-advanced::before {
+            content: ''; position: fixed; top: 0; left: var(--sidebar-w); right: 0; bottom: 0;
+            background: radial-gradient(ellipse 60% 40% at 50% 0%, rgba(255,255,255,.03) 0%, transparent 60%);
+            pointer-events: none; z-index: 0;
+        }
+        .page-advanced > * { position: relative; z-index: 1; }
+        .page-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 24px; }
+        .page-header h1 { font-size: 22px; font-weight: 700; letter-spacing: -.5px; }
+        .page-header-sub { font-size: 13px; color: var(--text-dim); margin-top: 2px; }
+        .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; position: relative; overflow: hidden; }
+        .card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: linear-gradient(90deg, transparent, rgba(255,255,255,.08), transparent); }
+        .card-title { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }
+        .card-title svg { width: 18px; height: 18px; color: var(--text-dim); }
+        .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        thead { background: var(--bg-elevated); }
+        th { text-align: left; padding: 10px 14px; font-weight: 500; color: var(--text-dim); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; border-bottom: 1px solid var(--border); }
+        td { padding: 10px 14px; color: var(--text-muted); border-bottom: 1px solid var(--border); }
+        tr:last-child td { border-bottom: none; }
+        tr:hover td { background: rgba(255,255,255,.03); }
+        .status { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 500; padding: 3px 8px; border-radius: 100px; }
+        .status-dot { width: 6px; height: 6px; border-radius: 50%; }
+        .status-running { background: var(--green-bg); color: var(--green); border: 1px solid rgba(34,197,94,.2); }
+        .status-running .status-dot { background: var(--green); box-shadow: 0 0 6px var(--green); }
+        .status-stopped { background: var(--red-bg); color: var(--red); border: 1px solid rgba(239,68,68,.2); }
+        .status-stopped .status-dot { background: var(--red); }
+        .days-box { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; padding: 4px 10px; border-radius: 100px; }
+        .days-critical { background: rgba(239,68,68,.12); color: #f87171; border: 1px solid rgba(239,68,68,.2); }
+        .days-warning { background: rgba(234,179,8,.12); color: #fbbf24; border: 1px solid rgba(234,179,8,.2); }
+        .days-ok { background: rgba(34,197,94,.12); color: #34d399; border: 1px solid rgba(34,197,94,.2); }
+        .empty-state { text-align: center; padding: 60px 20px; }
+        .empty-icon { width: 64px; height: 64px; margin: 0 auto 16px; background: var(--bg-hover); border-radius: 16px; display: flex; align-items: center; justify-content: center; color: var(--text-dim); }
+        .empty-state h3 { font-size: 15px; font-weight: 600; color: var(--text-muted); margin-bottom: 6px; }
+        .empty-state p { font-size: 13px; color: var(--text-dim); margin-bottom: 20px; }
+        .empty-state a { color: var(--primary); }
+        @media (max-width: 768px) {
+            .page-header { flex-direction: column; gap: 10px; }
+            .page-header h1 { font-size: 15px; }
+            .page-header-sub { font-size: 10px; }
+            .card { padding: 10px; }
+            .card-title { font-size: 12px; margin-bottom: 6px; }
+            table { font-size: 11px; }
+            th, td { padding: 5px 6px; }
+            .status { padding: 2px 6px; font-size: 9px; }
+        }
+    </style>
+</head>
+<body>
+    {% include 'icons.html' %}
+    {% from 'components.html' import sidebar, topbar, overlay %}
+    <div class="app-layout">
+        {{ sidebar('expiring', settings, custom_icon) }}
+        <div class="main-content">
+            {{ topbar('Expiring VPS', 'expiring') }}
+            <div class="page page-advanced">
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        {% for category, message in messages %}
+                            <div class="alert alert-{{ category }}">{{ message }}</div>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
+                <div class="page-header">
+                    <div>
+                        <h1>Expiring VPS</h1>
+                        <p class="page-header-sub">VPS instances nearing their expiration date.</p>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-title">
+                        <svg width="18" height="18"><use href="#icon-clock"/></svg>
+                        Instances by Expiration
+                    </div>
+                    {% if vps_list %}
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>User</th>
+                                    <th>Instance</th>
+                                    <th>Expires</th>
+                                    <th>Days Left</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for vps in vps_list %}
+                                <tr>
+                                    <td>{{ vps['username'] }}</td>
+                                    <td>{{ vps['container_name'] }}</td>
+                                    <td>{{ vps['expiry_date'] }}</td>
+                                    <td>
+                                        {% set days = vps['days_left'] %}
+                                        {% if days <= 1 %}
+                                            <span class="days-box days-critical">{{ days }} day{% if days != 1 %}s{% endif %}</span>
+                                        {% elif days <= 7 %}
+                                            <span class="days-box days-warning">{{ days }} days</span>
+                                        {% else %}
+                                            <span class="days-box days-ok">{{ days }} days</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <span class="status status-{{ vps['status'] }}">
+                                            <span class="status-dot"></span>
+                                            {{ vps['status'] }}
+                                        </span>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="empty-state">
+                        <div class="empty-icon"><svg width="28" height="28"><use href="#icon-clock"/></svg></div>
+                        <h3>No expiring instances</h3>
+                        <p>All VPS instances have plenty of time remaining.</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {{ overlay() }}
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>
